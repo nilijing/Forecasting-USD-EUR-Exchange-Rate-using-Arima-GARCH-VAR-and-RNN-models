@@ -1,0 +1,312 @@
+---
+title: "Untitled"
+author: "Mingwen Yang"
+date: "4/26/2020"
+output: pdf_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE, warning = FALSE)
+```
+
+
+## Load data & Unit Root Test
+
+```{r}
+library(vars)
+library(quantmod)
+library(parallel)
+library(rugarch)
+library(rmgarch)
+library(tseries)
+library(zoo)
+library(forecast)
+library(fGarch)
+library(FinTS)
+library(lmtest)
+library(urca)
+library(xts)
+library(Metrics)
+library(DistributionUtils)
+library(readxl)
+library(fUnitRoots)
+```
+```{r}
+ratedata = read.csv("D:/2019-2020/Time Series/hw/group/rate.csv")
+rate = xts(ratedata$currency.rate, as.Date(ratedata$ï..DATE, format='%m/%d/%y', tz = "US"))
+rate_train = rate[1:1080]
+rate_test = rate[1081:1343]
+#head(rate_train)
+#tail(rate_train)
+#head(rate_test)
+#tail(rate_test)
+
+df = read.csv("D:/2019-2020/Time Series/hw/group/data.csv")
+data = ts(df[2:10], start = c(2015, 1), end = c(2020, 2), frequency=12)
+head(data)
+M1_US_rt = dailyReturn(data[, 1])
+M1_EU_rt = dailyReturn(data[, 2])
+GDP_US_rt = dailyReturn(data[, 3])
+GDP_EU_rt = dailyReturn(data[, 4])
+CPI_US_rt = dailyReturn(data[, 5])
+CPI_EU_rt = dailyReturn(data[, 6])
+XAU_USD_rt = dailyReturn(data[, 7])
+WTI_USD_rt = dailyReturn(data[, 8])
+RATE_rt = dailyReturn(data[, 9])
+
+df_US = read_excel("D:/2019-2020/Time Series/hw/group/US_part.xlsx", sheet=1, na="NA")
+data_US = ts(df_US[2:4], start = c(2011, 1), end = c(2020, 2), frequency = 12)
+#head(data_US)
+M1_US1_rt = dailyReturn(data_US[, 1])
+CPI_US1_rt = dailyReturn(data_US[, 2])
+RATE1_rt = dailyReturn(data_US[, 3])
+
+df_D = read_excel("D:/2019-2020/Time Series/hw/group/DAILY_part.xlsx", sheet=1, na="NA")
+data_D = xts(df_D[, 2:4], as.Date(df_D$DATE, format='%m/%d/%y', tz = "US"))
+#head(data_D)
+XAU_USD1_rt = dailyReturn(data_D$XAU_USD, type = "log")
+WTI_USD1_rt = dailyReturn(data_D$WTI_USD, type = "log")
+RATE2_rt = dailyReturn(data_D$`currency rate`, type = "log")
+```
+```{r}
+adfTest(M1_US_rt)
+adfTest(M1_EU_rt)
+adfTest(GDP_US_rt)
+adfTest(GDP_EU_rt)
+adfTest(CPI_US_rt)
+adfTest(CPI_EU_rt)
+adfTest(XAU_USD_rt)
+adfTest(WTI_USD_rt)
+adfTest(RATE_rt)
+
+GDP_EU_sta = ur.df(GDP_EU_rt, type='none', selectlags='AIC')
+summary(GDP_EU_sta)
+acf(GDP_EU_rt)
+pacf(GDP_EU_rt)
+GDP_EU_rt_dif = diff(GDP_EU_rt, 1)
+adfTest(GDP_EU_rt_dif)
+acf(GDP_EU_rt_dif, na.action = na.pass)
+pacf(GDP_EU_rt_dif, na.action = na.pass)
+
+GDP_EU_rt_dif[1] = 0
+data_rt = cbind(M1_US_rt, M1_EU_rt, GDP_US_rt, GDP_EU_rt_dif, CPI_US_rt, CPI_EU_rt, XAU_USD_rt, WTI_USD_rt, RATE_rt)
+names(data_rt) = c("M1_US", "M1_EU", "GDP_US", "GDP_EU", "CPI_US", "CPI_EU", "XAU_USD", "WTI_USD", "RATE")
+head(data_rt)
+
+data_rt_train = data_rt[1:50]
+data_rt_test = data_rt[51:62]
+head(data_rt_train)
+tail(data_rt_train)
+head(data_rt_test)
+tail(data_rt_test)
+
+
+adfTest(M1_US1_rt)
+adfTest(CPI_US1_rt)
+adfTest(RATE1_rt)
+
+data_US_rt = cbind(M1_US1_rt, CPI_US1_rt, RATE1_rt)
+names(data_US_rt) = c("M1", "CPI", "RATE")
+#head(data_US_rt)
+plot(as.xts(data_US_rt), type="l", multi.panel=TRUE, theme="white", main="M1_US & CPI_US & RATE", major.ticks="years", rid.ticks.on = "years")
+
+
+adfTest(XAU_USD1_rt)
+adfTest(WTI_USD1_rt)
+adfTest(RATE2_rt)
+
+data_D_rt = data.frame(XAU_USD1_rt, WTI_USD1_rt, RATE2_rt)
+names(data_D_rt) = c("XAU", "WTI", "RATE")
+#head(data_D_rt)
+plot(as.xts(data_D_rt), type="l", multi.panel=TRUE, theme="white", main="XAU_USD & WTI_USD & RATE", major.ticks="years", rid.ticks.on = "years")
+
+data_D_rt_train = data_D_rt[1:1330,]
+data_D_rt_test = data_D_rt[1331:1344,]
+```
+
+
+## ARIMA & GARCH
+
+Use "auto.arima" to fit a model for daily return of currency rate.  
+Then check out ARCH effect to build GARCH model.
+```{r}
+md_arima_1 = auto.arima(rate_train)
+md_arima_1
+rate_train_rt = dailyReturn(rate_train, type = "log")
+rate_test_rt = dailyReturn(rate_test, type = "log")
+adfTest(rate_train_rt)
+acf(rate_train_rt)
+pacf(rate_train_rt)
+```
+```{r}
+md_arima_2 = auto.arima(rate_train_rt)
+md_arima_2
+pred_arima = predict(md_arima_2, 263)
+rmse(predicted = as.numeric(unlist(pred_arima[1])), actual = as.numeric(unlist(rate_test_rt)))
+```
+
+```{r}
+Box.test(md_arima_2$residuals^2, 10, type = "Ljung")
+pacf(md_arima_2$residuals^2)
+```
+
+```{r}
+md_arch_G = garchFit(~garch(1, 0), data = rate_train_rt, trace = F)
+summary(md_arch_G)
+pred_arch_G = predict(md_arch_G, 263)
+pred_arch_G
+rmse(predicted = as.numeric(unlist(pred_arch_G[1])), actual = as.numeric(unlist(rate_test_rt)))
+```
+
+```{r}
+md_arch_t = garchFit(~garch(1, 0), data = rate_train_rt, cond.dist = c("std"), trace = F)
+summary(md_arch_t)
+pred_arch_t = predict(md_arch_t, 263)
+pred_arch_t[1]
+rmse(predicted = as.numeric(unlist(pred_arch_t[1])), actual = as.numeric(unlist(rate_test_rt)))
+```
+
+```{r}
+md_garch_G = garchFit(~garch(1, 1), data = rate_train_rt, trace = F)
+summary(md_garch_G)
+pred_garch_G = predict(md_garch_G, 263)
+rmse(predicted = as.numeric(unlist(pred_garch_G[1])), actual = as.numeric(unlist(rate_test_rt)))
+```
+
+```{r}
+md_garch_t = garchFit(~garch(1, 1), data = rate_train_rt, cond.dist = c("std"), trace = F)
+summary(md_garch_t)
+pred_garch_t = predict(md_garch_t, 263)
+rmse(predicted = as.numeric(unlist(pred_garch_t[1])), actual = as.numeric(unlist(rate_test_rt)))
+```
+
+```{r TGARCH}
+md_tgarch = garchFit(~aparch(1,1), rate_train_rt, delta = 2, include.delta = F, trace = F)
+summary(md_tgarch)
+pred_tgarch = predict(md_tgarch, 263)
+rmse(predicted = as.numeric(unlist(pred_tgarch[1])), actual = as.numeric(unlist(rate_test_rt)))
+```
+
+
+## VAR & VEC
+
+```{r}
+#Apply granger test for determining whether one time series is useful in forecasting currency rate.
+grangertest(M1_US_rt, RATE_rt, order = 1, na.action = na.omit)
+grangertest(M1_EU_rt, RATE_rt, order = 1, na.action = na.omit)
+grangertest(GDP_US_rt, RATE_rt, order = 1, na.action = na.omit)
+grangertest(GDP_EU_rt_dif, RATE_rt, order = 1, na.action = na.omit)
+grangertest(CPI_US_rt, RATE_rt, order = 1, na.action = na.omit)
+grangertest(CPI_EU_rt, RATE_rt, order = 1, na.action = na.omit)
+grangertest(XAU_USD_rt, RATE_rt, order = 1, na.action = na.omit)
+grangertest(WTI_USD_rt, RATE_rt, order = 1, na.action = na.omit)
+```
+From the result, only GDP_EU_rt is significant, while it is a first order differential. So we tried cointegration test.
+
+```{r}
+currency.rate = as.numeric(RATE_rt)
+#M1_US = as.numeric(M1_US_rt)
+#M1_EU = as.numeric(M1_EU_rt)
+#GDP_US = as.numeric(GDP_US_rt)
+GDP_EU = as.numeric(GDP_EU_rt_dif)
+#CPI_US = as.numeric(CPI_US_rt)
+#CPI_EU = as.numeric(CPI_EU_rt)
+#XAU_USD = as.numeric(XAU_USD_rt)
+#WTI_USD = as.numeric(WTI_USD_rt)
+```
+
+```{r}
+#md_lm = lm(currency.rate ~ M1_US + M1_EU + GDP_US + GDP_EU + CPI_US + CPI_EU + XAU_USD + WTI_USD)
+md_lm = lm(currency.rate ~ GDP_EU_rt, data_rt_train)
+summary(md_lm)
+dwtest(md_lm)
+res = residuals(md_lm)
+ur.df(res, type = "none", selectlags = "AIC")
+```
+
+```{r}
+x = cbind(GDP_EU_rt, RATE_rt)[1:50]
+names(x) = c("GDP_EU", "RATE")
+head(x)
+```
+
+```{r}
+vecm = ca.jo(x, K = 2, ecdet = "const")
+summary(vecm)
+```
+To construct the VAR model for the selected endogenous variables, the co-integration test is needed. Apply durbin-watson test to linear model. As the value of p-value is small enough, indicating that the residual sequence is not independent at the significance level of 5% and has autocorrelation. According to the stationariness test results of the residual series, the null hypothesis that the residual series has unit root is rejected at the significance level of 5%, that is, the residual series is stable, indicating that there is a co-integration relationship between currency rate and GDP of EU.  
+From the result of Johansen procedure, we know the rank of the co-integration vector is 1.  
+Then used cajorls() to estimate the coefficient matrix of the VEC model. Then VEC model is converted to horizontal VAR model to predict currency rate.
+```{r}
+md_vec = cajorls(vecm, r=1)
+md_vec
+md_var = vec2var(vecm, r = 1)
+md_var
+pred_var = predict(md_var, 12)
+rmse(predicted = pred_var$fcst$RATE[1], actual = as.numeric(unlist(data_rt_test$RATE)))
+#irf(md_var)
+```
+
+## DCC-GARCH
+
+```{r}
+#Calculate the maximum, minimum, median, skewness, kurtosis and extremum
+data_outline = function(x){
+  m = mean(x)
+  d=max(x)
+  xd=min(x)
+  me = median(x)
+  s = sd(x)
+  kur=kurtosis(x)
+  ske=skewness(x)
+  R = max(x)-min(x)
+  data.frame(Mean=m, Median=me, max=d,min=xd,std_dev=s, Skewness=ske, Kurtosis=kur, R=R)
+}
+for (i in  1:3){print(data_outline(data_D_rt[,i]))}
+```
+
+```{r}
+ArchTest(M1_US1_rt)
+ArchTest(CPI_US1_rt)
+ArchTest(RATE1_rt)
+
+
+ArchTest(XAU_USD1_rt)
+ArchTest(WTI_USD1_rt)
+ArchTest(RATE2_rt)
+```
+There is no ARCH effect of the monthly time series data, we decided to use the daily data, because ARCH effect shows in all three time series.
+
+```{r}
+#Calculate the correlation coefficient matrix
+corre = cor(data_D_rt)
+corre
+```
+
+```{r DCC-GARCH}
+#1:   Conditional Mean (vs Realized Returns)
+#2:   Conditional Sigma (vs Realized Absolute Returns)
+#3:   Conditional Covariance
+#4:   Conditional Correlation
+#5:   EW Portfolio Plot with conditional density VaR limits
+myuspec = multispec(replicate(3, ugarchspec(mean.model = list(armaOrder = c(1,1)))))
+mydcc = dccspec(myuspec, VAR = TRUE, lag = 1, lag.max = 12, dccOrder = c(1, 1), distribution = 'mvnorm')
+md_dcc = dccfit(mydcc, data = data_D_rt_train, fit.control = list(eval.se=TRUE))
+
+myuspec1 = multispec(replicate(2, ugarchspec(mean.model = list(armaOrder = c(1,1)))))
+mydcc1 = dccspec(myuspec1, VAR = TRUE, lag = 1, lag.max = 12, dccOrder = c(1, 1), distribution = 'mvnorm')
+md_dcc_xau = dccfit(mydcc1, data = data_D_rt_train[, c(1, 3)], fit.control = list(eval.se=TRUE))
+plot(md_dcc_xau)
+
+md_dcc_wti = dccfit(mydcc1, data = data_D_rt_train[, c(2, 3)], fit.control = list(eval.se=TRUE))
+plot(md_dcc_wti)
+```
+
+```{r}
+#Predict with DCC-GARCH
+pred_dcc = dccforecast(md_dcc, n.ahead = 14)
+#pred_dcc
+#fitted(pred_dcc)
+rmse(predicted = as.numeric(unlist(fitted(pred_dcc)[3])), actual = as.numeric(unlist(data_D_rt_test[3])))
+```
+

@@ -1,7 +1,7 @@
 # Forecasting-USD-EUR-Exchange-Rate-using-Arima-GARCH-VAR-and-RNN-models
 
 
-In this project we use ARIMA，GARCH and VAR(Vector Autoregression Model) models to forecast the trend and value of the USD/EUR exchange rate.
+In this project we use ARIMA, GARCH and VAR(Vector Autoregression Model) models to forecast the trend and value of the USD/EUR exchange rate.
 
 
 ### Data Source
@@ -33,9 +33,9 @@ The best model is selected based on the prediction of the future trend and the a
 
    "rate.csv" is the data of LSTM model in "LSTM.py". 
    
-   "LSTM.html" is the result of "LSTM.py".
+   "LSTM.pdf" is the result of "LSTM.py".
 
-2. "models.rmd" is raw code for ARIMA, GARCH,VEC,DCC.
+2. "GARCH.rmd" is raw R code for ARIMA, GARCH, VEC, DCC.
 
    "rate.csv" is the data of ARIMA, GARCH model. 
    
@@ -43,8 +43,10 @@ The best model is selected based on the prediction of the future trend and the a
    
    "US_part.xlsx" and "DAILY_part.xlsx" is the data of DCC.
    
-   "Models.pdf" is the result of "models.rmd".
+   "GARCH.pdf" is the result of "GARCH.rmd".
 
-3. "VAR.rmd" and "VAR.pdf" are raw code and results of VAR model.
+3. "VAR.rmd" and "VAR.pdf" are raw R code and results of VAR model.
 
    "data.csv" is the data of VAR model.
+   
+   "VAR.pdf" is the result of "VAR.rmd".

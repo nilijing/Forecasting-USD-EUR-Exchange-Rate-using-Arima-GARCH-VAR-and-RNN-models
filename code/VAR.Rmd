@@ -1,0 +1,113 @@
+---
+title: "VAR_USD/EUR_RATE"
+
+output:
+  html_document: default
+  pdf_document: default
+---
+TAN,YIJING 
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+```{r}
+library(xts)
+library(data.table)
+library(quantmod)
+library(MTS)
+library(Metrics)
+```
+1.Data preparation:
+```{r}
+data <- read.csv("/Users/yijingtan/Desktop/time series/project/code/sample/code.csv", header=TRUE, stringsAsFactors=FALSE)
+setDT(data)
+head(data)
+
+d=as.Date(data$DATE, format='%Y-%m-%d')
+d1=d[1:980]
+
+us=data[,c(2,3,4)]
+usdt=xts(us,order.by = d)
+```
+2.Data processing:
+```{r}
+us= ts( as.matrix(usdt[,c("XAU","WTI","RATE")]), start=c(2015,01) ) 
+z=diff(log(us[,1:2]))*100 
+RATE=us[1:1343,3]       
+dt=data.frame(z,RATE)
+
+tst=dt[979:1343,3]       #test data
+z=xts(dt[1:980,],order.by = d1)   #training data 
+head(z)
+```
+The data has been stationary after log transformation and differncing.
+```{r}
+plot(as.xts(z), type="l", 
+     multi.panel=TRUE, theme="white",
+     plot.type="single",
+     main="Plot of XAU, WTI and USD/EUR Exchange rate (daily)",
+     major.ticks="years",
+     grid.ticks.on = "years")
+```
+
+3.Build VAR model:
+```{r}
+Z=coredata(as.xts(z))
+vaor=VARorder(Z/100)    #select VAR model order
+#recommend p=3
+vamd=VAR(Z, 3)
+```
+From the perspective of AIC, we should take p = 3. P-values are not significant any more since i = 3.
+
+
+4.Model test:
+```{r}
+res= vamd$residuals
+mq(res, adj=3^2*3)
+```
+The test result is only significant at lag 5; thus, the model can be considered sufficient.
+
+
+5.Model simplification:
+```{r}
+VARchi(Z, 3, thres=1.96)    
+#compare restrictd  model with normal VAR model
+```
+When significance level is 0.05，there are 23 parameters are insignificant. H0 is that all the 23 parameters equals to 0 at the same time. P-value is 0.3356928 which means that we can simultaneously set the 23 parameters to be zero.
+```{r}
+vamd     
+rvamd=refVAR(vamd, thres=1.96)   
+```
+The AIC of the unconstrained VAR (3) is -9.576549 and the AIC of the VAR (3) with 23 parameters of zero constraints is -9.599844, so the constrained model is better. 
+
+
+6.Simplified Model test
+```{r}
+MTSdiag(rvamd, adj=8)
+```
+The number of degrees of freedom has been reduced from the original 27 to 5. From the CCM of residuals and the results of multivariate portmanteau test, the constrained model is sufficient.
+
+Correlation matrix of residuals:
+```{r}
+cor(rvamd$residuals)
+```
+
+
+7.Granger causality test
+```{r}
+GrangerTest(Z, p=3, locInput=3)   
+```
+The p-value is less than 0.05, indicating that XAU and WIT are Granger causes of the USD/EUR exchange rate.
+```{r}
+GrangerTest(Z, p=3, locInput=2)  
+GrangerTest(Z, p=3, locInput=1) 
+```
+Both the test results show that under significance level of 0.05, the USD/EUR exchange rate are not Granger causes of XAU and WTI. 
+
+
+8.Predication
+```{r}
+p=VARpred(rvamd, 244)$pred[,3] #predication of USD/EUR exchange rate
+y_test=tst[1:244]
+rmse(y_test,p)
+```
+The RMSE is around 0.00766, indicating that the model is adequate to predict short term USD/EUR exchange rate.
